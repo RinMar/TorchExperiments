@@ -8,9 +8,13 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+import models
+from Chars74KDataset import Chars74KDataset
 from models import DigitClassifier, LetterClassifier
 
 matplotlib.use('QtAgg')
+
 
 class Dataset(Enum):
     EMNIST = "emnist"
@@ -18,13 +22,13 @@ class Dataset(Enum):
 
 
 config = {
-    'epochs': 10,
-    'batch_size': 64,
+    'epochs': 5,
+    'batch_size': 32,
     'lr': 0.001,
-    'model': LetterClassifier,
+    'model': 'letter',  # digit,letter
+    'mode': 'combines',  # solo, combined
     'loss_function': nn.CrossEntropyLoss,
 }
-
 
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
@@ -32,34 +36,41 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))  # Normalize to [-1, 1]
 ])
 
+chars74k_train = Chars74KDataset(train=True, transform=transform, download=True)
+chars74k_test = Chars74KDataset(train=False, transform=transform, download=True)
+
 mnist_train = datasets.MNIST(root="./data", train=True,
                              download=True, transform=transform)
 mnist_test = datasets.MNIST(root="./data", train=False,
                             download=True, transform=transform)
 
+chars74k_path = "./data/Chars74K/English/Hnd/Img"
+chars74k_dataset = Chars74KDataset(chars74k_path, transform=transform)
+
 # Load EMNIST dataset (letters only)
-emnist_train = datasets.EMNIST(root="./data", split="letters",
+emnist_train = datasets.EMNIST(root="./data", split="byclass",
                                train=True, transform=transform, download=True)
-emnist_test = datasets.EMNIST(root="./data", split="letters",
+emnist_test = datasets.EMNIST(root="./data", split="byclass",
                               train=False, transform=transform, download=True)
-if config['model'] == LetterClassifier:
+if config['model'] == 'letter':
     model = LetterClassifier()
     train_dataset = emnist_train
     test_dataset = emnist_test
     if Path("letter_classifier.pth").is_file():
         model.load_state_dict(torch.load("letter_classifier.pth"))
-    print("loaded model from disc")
+        print("loaded model from disc")
 else:
     model = DigitClassifier()
     train_dataset = mnist_train
     test_dataset = mnist_test
     if Path("digit_classifier.pth").is_file():
         model.load_state_dict(torch.load("digit_classifier.pth"))
-    print("loaded model from disc")
+        print("loaded model from disc")
 
-train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False)
-
+train_loader = DataLoader(train_dataset,
+                          batch_size=config['batch_size'], shuffle=True)
+test_loader = DataLoader(test_dataset,
+                         batch_size=config['batch_size'], shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)  # Move model to GPU if available
@@ -121,18 +132,22 @@ def predict():
     for i, ax in enumerate(axes.flat):
         img = images[i].squeeze().numpy()  # Remove extra dimensions
         ax.imshow(img, cmap="gray")
-        ax.set_title(f"Pred: {predicted[i].item()} | True: {labels[i].item()}")
+        if config['model'] == DigitClassifier:
+            ax.set_title(f"Pred: {predicted[i].item()} | True: {labels[i].item()}")
+        else:
+            ax.set_title(f"Pred: {models.emnist_mapping(predicted[i].item())} "
+                         f"| True: {models.emnist_mapping(labels[i].item())}")
         ax.axis("off")
 
     plt.show()
 
 
 if __name__ == "__main__":
-    show_images(10)
+    # show_images(10)
 
     train(config['epochs'])
     accuracy = evaluate()
-    if accuracy >= 90.:
+    if accuracy >= 70.:
         if config['model'] == LetterClassifier:
             torch.save(model.state_dict(), "letter_classifier.pth")
         else:

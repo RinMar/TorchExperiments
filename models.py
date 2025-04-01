@@ -24,6 +24,15 @@ def _binarize_image(image: Image, threshold: int = 128):
     return image
 
 
+def emnist_mapping(letter: int):
+    if letter < 10:
+        return str(letter)
+    elif letter <= 35:
+        return chr(letter + 55)
+    else:
+        return chr(letter + 61)
+
+
 def _prepare_image(image: Image):
     transform = transforms.Compose([
         transforms.Grayscale(num_output_channels=1),  # Ensure it's grayscale
@@ -76,22 +85,34 @@ class LetterClassifier(nn.Module):
     def __init__(self):
         super(LetterClassifier, self).__init__()
         self.model = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=5),
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),
 
-            nn.Conv2d(16, 32, kernel_size=5),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),
 
-            nn.Conv2d(32, 64, kernel_size=2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),
 
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
             nn.AdaptiveAvgPool2d(1),
 
         )
-        self.fc = nn.Linear(64, 62)
+        self.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 62)
+        )
+
 
     def forward(self, x):
         x = self.model(x)
@@ -104,4 +125,4 @@ class LetterClassifier(nn.Module):
         with torch.no_grad():
             output = self(image)
             _, predicted = torch.max(output, 1)
-            return predicted
+            return emnist_mapping(predicted)
